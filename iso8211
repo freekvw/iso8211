@@ -1,0 +1,622 @@
+#!/usr/bin/env python2
+
+# Copyright (c) 1994, 1996, Tony J. Ibbs All rights reserved.
+# Copyright (c) 2004, Derek Chen-Becker All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+# 
+#     * Redistributions of source code must retain the above copyright
+#       notice, this list of conditions and the following disclaimer.
+#       
+#     * Redistributions in binary form must reproduce the above
+#       copyright notice, this list of conditions and the following
+#       disclaimer in the documentation and/or other materials provided
+#       with the distribution.
+#       
+#     * Neither the name of py-iso8211 nor the names of its contributors
+#       may be used to endorse or promote products derived from this
+#       software without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+"""iso8211 - the command line interface for the iso8211.py module.
+
+	Created by Tony J Ibbs, 9 January 1996
+	This is the command interface to the iso8211 module
+	See the "usage()" function below for a description of how to use it
+
+	Much of this is stolen from the "timesheet2" python file.
+	"""
+
+import sys
+import os
+import posix
+import posixpath
+import string
+import stat
+
+#import ni; ni.ni()
+
+import iso8211
+from   cmdline   import CommandLine
+from   pathutils import expand_path
+
+# Standard stuff
+
+FALSE = 0
+TRUE  = 1
+
+# Exceptions
+
+class CommandFailure(Exception):
+	"Command failed"
+	pass
+
+
+
+#---------------------------------------------------------------------------------
+class Cmd(CommandLine):
+	"""ISO 8211 command context.
+
+	A subclass of CommandLine.
+
+	Main variable is the actual current DDF.
+	"""
+
+	def __init__(self):
+
+		# Do the command line initialisation
+
+		CommandLine.__init__(self)
+
+		# Define our own data
+		# - build an empty DDF object
+
+		self.ddf = iso8211.DDF()
+
+		# The current directory is where we are
+
+		self.current_directory = expand_path(".")
+
+		# Define our own prompt
+
+		self.prompt = "iso 8211: "
+
+		# We handle the iso8211 exceptions specially, by
+		# passing them down to a routine to explain them
+
+		self.exceptions_to_handle = iso8211.Exceptions
+		self.handler = iso8211.explain_by_hand
+
+		# Add our own commands
+
+		self.commands["cd"]      = self.cd
+		self.commands["close"]   = self.close
+		self.commands["dir"]     = self.dir
+		self.commands["pwd"]     = self.pwd
+		self.commands["file"]    = self.file
+		self.commands["forall"]  = self.forall
+		self.commands["list"]    = self.list
+		self.commands["show"]    = self.show
+		self.commands["write"]   = self.write
+		self.commands["read"]    = self.read
+		self.commands["pass"]    = self.donowt
+		self.commands["debug"]   = self.debug2
+		self.commands["package"] = self.package
+
+		# And extend the help string to know about them
+
+		self.help_string = self.help_string + _help_str
+
+
+	def __repr__(self):
+		return "ISO 8211 command context (%s)"%self.ddf
+
+
+	def donowt(self,cmd,args):
+		"""Do nothing - sometimes useful with "forall".
+
+		(The routine can't be called "pass" because that is a Python word)"""
+
+		return
+
+
+	def debug2(self,cmd,args):
+		"""Debug the ISO 8211 code."""
+
+		iso8211.debugging = TRUE
+		print "Debugging on"
+
+
+	def forall(self,cmd,args):
+		"""Prompt for a command to perform on all DDF files."""
+
+		# Get the list of DDFs in the current directory
+
+		try:
+			ddfs  = iso8211.list(self.current_directory)
+		except:
+			print "%s: %s"%(sys.exc_type,sys.exc_value)
+			return
+
+		# If there are none, give up
+
+		if len(ddfs) == 0:
+			print "There are no DDFs in directory",self.current_directory
+			return
+		else:
+			print "For all DDFs in directory",self.current_directory
+
+		# Work out the command(s) we are to do
+
+		if len(args) == 0:
+			try:
+				command = raw_input("Command: ")
+			except KeyboardInterrupt:
+				print
+				return
+			command = string.split(command)
+		else:
+			command = args
+
+		# Apply it to each file in turn
+
+		ddfs.sort()
+		for name in ddfs:
+			try:
+				check = raw_input("DDF %s (y,n,q): [y] "%name)
+			except KeyboardInterrupt:
+				check = "q"
+
+			if check == "n" or check == "N":
+				continue
+			elif check == "q" or check == "Q":
+				if self.ddf.file != None:
+					self.close(None,None)
+				return
+
+			file = os.path.join(self.current_directory,name)
+
+			print "Reading DDF",file
+			self.ddf.open(file,"r")
+
+			self.obey_command_line(command)
+
+			self.ddf.close()
+
+
+	def pwd(self,cmd,args):
+		"""State the `current' directory."""
+
+		print "Current directory is:",self.current_directory
+
+
+	def cd(self,cmd,args):
+		"""Change the `current' directory."""
+
+		if len(args) < 1:
+			raise CommandFailure,"`cd' needs a directory name"
+
+		# Work out the directory requested
+
+		request   = os.path.join(self.current_directory,args[0])
+		directory = expand_path(request)
+
+		if not os.path.exists(directory):
+			print "Directory %s does not exist"%directory
+		else:
+			self.current_directory = directory
+			print "Changed to directory %s"%directory
+
+
+
+	def list(self,cmd,args):
+		"""List the DDF files in a directory."""
+
+		if len(args) < 1:
+			directory = self.current_directory
+		else:
+			request   = os.path.join(self.current_directory,args[0])
+			directory = expand_path(request)
+
+		try:
+			ddfs  = iso8211.list(directory)
+		except:
+			print "%s: %s"%(sys.exc_type,sys.exc_value)
+			return
+
+		print "DDF files in directory ",directory
+		if len(ddfs) == 0:
+			print "    None"
+		else:
+			ddfs.sort()
+			for name in ddfs:
+				path = os.path.join(directory,name)
+
+				stats = os.stat(path)
+				size  = stats[stat.ST_SIZE]
+
+				print "    %-20s %7d"%(name,size)
+
+
+
+	def dir(self,cmd,args):
+		"""List the files in a directory."""
+
+		if len(args) < 1:
+			directory = self.current_directory
+		else:
+			request   = os.path.join(self.current_directory,args[0])
+			directory = expand_path(request)
+
+		try:
+			files = os.listdir(directory)
+		except:
+			print "%s: %s"%(sys.exc_type,sys.exc_value)
+			return
+
+		print "Files in directory ",directory
+		if len(files) == 0:
+			print "    None"
+		else:
+			files.sort()
+			for name in files:
+				path = os.path.join(directory,name)
+
+				stats = os.stat(path)
+				size  = stats[stat.ST_SIZE]
+
+				if os.path.isdir(path):
+					print "    %-20s"%(name+"/")
+				else:
+					print "    %-20s %7d"%(name,size)
+
+
+	def file(self,cmd,args):
+		"""Open a DDF for read."""
+
+		if len(args) < 1:
+			raise CommandFailure,"`file' needs a DDF name"
+
+		file = os.path.join(self.current_directory,args[0])
+		file = expand_path(file)
+
+		if self.ddf.file != None:
+			self.close(None,None)
+
+		print "Opening DDF",file
+		#try:
+		self.ddf.open(file,"r")
+		#except:
+		#print "%s: %s"%(sys.exc_type,sys.exc_value)
+
+
+	def close(self,cmd,args):
+		"""Close the current DDF."""
+
+		print "Closing DDF",self.ddf.name
+		self.ddf.close()
+
+
+	def write(self,cmd,args):
+		"""Write something out."""
+
+		if len(args) < 1:
+			raise CommandFailure,"`write' what? (dfd [<name>])"
+
+		if self.ddf == None:
+			raise CommandFailure,"No DDF given yet - use the `file' command"
+		else:
+			if args[0] == "DFD" or args[0] == "dfd":
+
+				if len(args) < 2:
+					# Work out a DFD name
+
+					root,ext = os.path.splitext(self.ddf.name)
+					name     = root + ".dfd"
+
+				else:
+					name = args[1]
+
+				name = os.path.join(self.current_directory,name)
+
+				print "Writing DFD",name
+				self.ddf.write_DFD(name)
+
+			else:
+				self.unknown_command("write",args[0])
+
+
+	def read(self,cmd,args):
+		"""Read something."""
+
+		if len(args) < 1:
+			raise CommandFailure,"`read' what? (dfd <name>)"
+
+		if args[0] == "DFD" or args[0] == "dfd":
+
+			if len(args) < 2:
+				raise CommandFailure,"No DFD name given"
+			else:
+				name = args[1]
+
+			name = os.path.join(self.current_directory,name)
+
+			print "Reading DFD",name
+
+			from iso8211.dfd import test
+			test(name)
+
+		else:
+			self.unknown_command("read",args[0])
+
+
+	def show_ddr(self):
+		"""Do the "show ddr" command."""
+
+		ddr = self.ddf.ddr
+		print `ddr`
+		ddr.show()
+
+
+	def show_data(self):
+		"""Do the "show data" command."""
+
+		for record in self.ddf:
+			print
+			record.show(with_leader=FALSE)
+
+
+	def show_field_in_record(self,tag,which):
+		"""Do the "show field <tag> in record <which>" command."""
+
+		record = self.ddf.record(which)
+		print "Record %d at offset %d"%(record.index,record.posn)
+
+		for field in record:
+			if field.tag == tag:
+				field.show()
+
+
+	def show_field_all_records(self,tag):
+		"""Do the "show field <tag>" command."""
+
+		for record in self.ddf:
+			doneheader = FALSE
+			for field in record:
+				if field.tag == tag:
+					if not doneheader:
+						print "Record %d at offset %d"%\
+						      (record.index,record.posn)
+					doneheader = TRUE
+					field.show()
+
+
+	def show_field(self,args):
+		"""Do the "show field" command."""
+
+		print args
+
+		if len(args) < 1:
+			raise CommandFailure,"show which field? (eg, show field 0001)"
+		else:
+			tag = args[0]
+
+		if len(args) > 1:
+			if args[1] != "in" or args[2] != "record":
+				raise CommandFailure,"command is: show field <tag> in record <index>"
+
+			try:
+				which = string.atoi(args[3])
+			except:
+				raise CommandFailure,"command is: show field <tag> in record <index>"
+
+			self.show_field_in_record(tag,which)
+		else:
+			self.show_field_all_records(tag)
+
+
+	def show_record(self,args):
+		"""Do the "show record" command."""
+
+		if len(args) < 1:
+			raise CommandFailure,\
+			      "show which record? (eg, show record 3 or show record at 123)"
+
+		if args[0] == "at":
+			self.show_record_at(args[1:])
+		else:
+			which = string.atoi(args[0])
+
+			record = self.ddf.record(which)
+			record.show(with_leader=TRUE)
+
+
+	def show_record_at(self,args):
+		"""Do the "show [record] at" command."""
+
+		if len(args) < 1:
+			raise CommandFailure,"show which record? (eg, show at 123)"
+
+		where = string.atoi(args[0])
+			
+		record = iso8211.Record(self.ddf,where,None)
+		record.show()
+
+
+	def show(self,cmd,args):
+		"""Show information about a DDF."""
+
+		if len(args) < 1:
+			raise CommandFailure("`show' what? (all, DDR, data, record <n>, at <offset>)")
+
+		if self.ddf == None:
+			raise CommandFailure("No DDF given yet - use the `file' command")
+		else:
+			if args[0] == "all":
+
+				self.ddf.show()
+
+			elif args[0] == "DDR" or args[0] == "ddr":
+
+				self.show_ddr()
+
+			elif args[0] == "data":
+
+				self.show_data()
+
+			elif args[0] == "field":
+
+				self.show_field(args[1:])
+
+			elif args[0] == "record":
+
+				self.show_record(args[1:])
+
+			else:
+				self.unknown_command("show "+args[0],args[1:])
+
+
+
+	def package(self,cmd,args):
+		"""Print out information about the iso8211 package"""
+
+		if len(args) < 1:
+			print "package should be followed by version,intro,todo or changes"
+		elif args[0] == "version":
+			print "Version is",iso8211.Version
+		elif args[0] == "todo":
+			print iso8211.Todo
+		elif args[0] == "changes":
+			print iso8211.Changes
+		elif args[0] == "intro":
+			print iso8211.Intro
+		else:
+			print "package should be followed by version,intro,todo or changes"
+			self.unknown_command("package "+args[0],args[1:])
+
+
+
+
+#---------------------------------------------------------------------------------
+def main():
+	"""Main routine, for use in interactive use of this file as a command.
+	"""
+
+	# sys.argv[0] is the command the user typed, which we don't particularly
+	# care about - let's just extract the rest of the command line...
+	# (but catch no arguments and pretend they said "interactive")
+
+	if len(sys.argv) == 1:
+		arg_list = ["interactive"]
+	else:
+		arg_list = sys.argv[1:]
+
+	#print "arg_list = ",arg_list
+
+	# Let's have a command line processor
+
+	command_processor = Cmd()
+
+	# And obey any commands
+
+	command_processor.obey_command_line(arg_list)
+
+
+
+#---------------------------------------------------------------------------------
+def usage ():
+	"""Usage: iso8211 <command> [+ <command> [+ <command> [...]]]
+
+	Try "iso8211 help" for more information.
+	"""
+
+	print usage.__doc__
+	sys.exit(0)
+
+
+#---------------------------------------------------------------------------------
+
+_help_str = """
+	package <what>	Print out information about the iso8211 package
+	        <what> is one of:
+			version		show the package version
+			intro		show an introduction to the code
+			changes		show the changes log
+			todo		show the `todo' list
+
+	cd   <dir>	Change where we will look for files.
+	pwd		Name the current `directory'
+	dir  [<dir>]	List the files in the given or `current' directory.
+	list [<dir>]	List the DDF files in the given or `current' directory.
+	file <path>	Open the named DDF for read (also closes any already
+			open DDF).
+	close		Close the currently open DDF
+
+	show  <what>	Show the contents of the DDF.
+	      <what> is one of:
+			all			   all records
+			ddr			   just the DDR
+			data			   just the data records
+			record <n>		   record <n> (0 is the DDR)
+			record at <n>		   record at offset <n> - use
+						   with care!
+			field <tag>		   show all occurrences of that
+						   field
+			field <tag> in record <n>  show all occurrences of that
+						   field in record <n>
+
+	write <what>	Write something out
+	      <what> is one of:
+			dfd [<name>]	the DFD, from the DDR. By default, the
+					<name> is the name of the DDF, with the
+					extension ".dfd" instead.
+
+	read <what>	Read a file
+	      <what> is one of:
+			dfd <name>	a DFD file - THIS IS EXPERIMENTAL
+
+	forall [<cmd>]	Perform a command (which is prompted for if it is not
+			given) for all DDF files in the `current' directory.
+			This involves opening each file, performing the command,
+			and then closing the file again. A prompt is given for
+			each DDF file - responses are "y" (process this file),
+			"n" (ignore it) or "q" (stop). The default response is
+			always "y".
+
+	pass		Do nothing - sometimes useful with "forall"
+
+NOTE that commands may be `chained' by separating them with "+" - this is so
+     that it is easier to do something like:
+
+		iso8211 file example.ddf + show data | more
+
+     But also note that the command given to "forall" may only be chained in
+     this way if it is prompted for (since "iso8211 forall aaa + bbb" will be
+     interpreted as the command "forall aaa" followed by the command "bbb").
+"""
+
+
+#---------------------------------------------------------------------------------
+# And let's do it!
+
+main()
+
+
+#---------------------------------------------------------------------------------
+# [X]Emacs local variables declaration - place us into python mode
+# Local Variables:
+# mode:python
+# End:

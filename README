@@ -1,0 +1,73 @@
+$Id: README,v 1.2 2004/04/03 15:51:26 derek Exp $
+
+This package provides support for (initially, just reading) ISO 8211 files
+
+http://sourceforge.net/projects/py-iso8211/
+
+Initial code: TJ Ibbs, 17 Feb 1994
+Updated: Apr 3, 2004, Derek Chen-Becker
+
+The structure of a DDF (as held here) is:
+
+	DDF
+	 |
+	[1] --- DDR (nb: sub-class of Record)
+	 |	\
+	 |	{ "tag" :: Field_desc }
+	 |		   \
+	 |		    field_controls, data_field_name,
+	 |		    array_descriptor, format_controls
+	 |
+	[*] --- Record
+	 	\
+		[1] --- Leader
+		 |
+		[1] --- Directory
+		 |	 |
+		 |	[*] --- Field
+		 |		\
+		 |		 tag, length, data
+		 |
+		[1] --- Field_area
+
+
+See module variables "Changes" and "Version" for the obvious things...
+
+This code was initially written by (but no longer at this address):
+
+	Tony J Ibbs
+
+	Department of Geography & Topographic Science,
+	University of Glasgow,
+	GLASGOW  G12 8QQ
+	Scotland
+
+	Tel: (+44)141-330-6649
+	Fax: (+44)141-330-4894
+
+	Email:	tony@lsl.co.uk
+	   or:	T.Ibbs@geog.gla.ac.uk
+
+	Url: http://www.geog.gla.ac.uk/staff/res/tibbs/
+
+Some (much) of it has been done in my own time, but some of it has been paid
+for by my funders:
+
+	Laser-Scan Ltd
+	Cambridge Science Park
+	Milton Road
+	Cambridge CB4 4FY
+	UK
+
+	Tel: (+44)1223-420414
+	Url: http://www.lsl.co.uk
+
+
+Please use our sourceforge page:
+
+http://sourceforge.net/projects/py-iso8211/
+
+To report any bugs, feature requests, etc, or to get the latest version of
+the library.
+
+See the file INSTALL for details of how to install this package.

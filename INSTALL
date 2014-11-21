@@ -1,0 +1,68 @@
+$Id: INSTALL,v 1.2 2004/04/03 15:46:08 derek Exp $
+
+Installing the iso8211 package
+==============================
+
+This document last edited April 3, 2004, Derek Chen-Becker.
+
+This document assumes you are working under Unix. This package has not been
+tested under any other operating systems (in fact, it has not been tested for
+portability much at all). Please bear in mind that this is NOT production
+software, nor is it in any sense "finished"! This package has been tested
+on Linux with Python 2.2, but we welcome reports of succesful usage on other
+OSes/Python versions.
+
+
+1) This file (INSTALL) should be in a directory called "iso8211". This
+   directory, as a whole, constitures a Python package.
+
+2) I assume that you already have Python installed - if not, you will need to
+   get it at: 
+
+		http://www.python.org/
+
+
+3) Place the "iso8211" directory somewhere that is on the Python path. This
+   can be done by either putting it into a location that is already on the
+   path, or by adding its location to the path.
+
+   There should be a python library directory on your computer, such as
+
+        /usr/lib/python2.2
+
+   If you place the "iso8211" directory there it will be available to all
+   users on your machine. If you do not want this or do not have access
+   to this directory, use the PYTHONPATH environment variable.
+
+   For instance, if the environment variable PYTHONPATH is set to:
+
+	/usr/users/tony/lib/python
+
+   then this package would be available if the directory were placed in that
+   directory. Alternatively, if this directory were placed in (for instance)
+   /usr/local/python (thus becoming /usr/local/python/iso8211), then it would
+   be appropriate to change PYTHONPATH to be:
+
+	/usr/users/tony/lib/python:/usr/local/python
+
+4) To make the "iso8211" command available, either add this directory to your
+   PATH, or make an appropriate link to the iso8211 file within this directory
+   such that the link is `visible' as a command on the path.
+
+Specific advice for Laser-Scan
+==============================
+
+I recommend doing the following:
+
+	1) Create a directory such as /tools/share/lsl/python
+	2) Place this directory therein
+	3) Tell people that if they want to use this software, then they should
+	   add the following to their .cshrc (or whatever):
+
+		alias  iso8211		/tools/share/lsl/python/iso8211/iso8211
+		setenv PYTHONPATH	${PYTHONPATH}:/tools/share/lsl/python
+
+	   (as well as whatever they need to use Python itself, of course! -
+	    and this omits to test if the PYTHONPATH variable already existed
+	    or not...)
+

@@ -1,0 +1,7 @@
+$Id: CHANGELOG,v 1.1 2004/04/05 17:45:50 d-rock Exp $
+
+* 0.9.1
+- Modified to work with Python 2.2 (Derek Chen-Becker)
+- Changed old string.atoi() to int() (Derek Chen-Becker)
+- Modified field handling to report field arrays as multiple
+  fields, similar to SDTS++ (Derek Chen-Becker)
